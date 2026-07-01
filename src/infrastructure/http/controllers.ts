@@ -46,6 +46,40 @@ export class ReferenceController {
   getReference() {
     return this.references.getReference();
   }
+
+  @Get('usda')
+  async getUsdaReference() {
+    const reference = await this.references.getReference();
+    return {
+      status: reference.status,
+      fetchedAt: reference.fetchedAt,
+      error: reference.error,
+      price: reference.price,
+      exports: reference.exports,
+      source: 'USDA Agricultural Marketing Service',
+      priceSourceUrl: reference.priceSourceUrl,
+      exportSourceUrl: reference.exportSourceUrl
+    };
+  }
+
+  @Get('hab')
+  async getHabReference() {
+    const reference = await this.references.getReference();
+    return {
+      status: reference.status,
+      fetchedAt: reference.fetchedAt,
+      error: reference.error,
+      hab: reference.hab,
+      source: 'Hass Avocado Board public highlights',
+      habSourceUrl: reference.habSourceUrl
+    };
+  }
+
+  @Post('refresh')
+  @UseGuards(ApiKeyGuard)
+  refreshReference() {
+    return this.references.getReference(true);
+  }
 }
 
 @ApiTags('pricing')

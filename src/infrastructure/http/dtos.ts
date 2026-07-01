@@ -47,8 +47,8 @@ export class DemandInputsDto {
 }
 
 export class CalculatePricingDto {
-  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => ObservationDto)
-  observations!: ObservationDto[];
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => ObservationDto)
+  observations?: ObservationDto[];
 
   @ValidateNested() @Type(() => DemandInputsDto)
   demand!: DemandInputsDto;

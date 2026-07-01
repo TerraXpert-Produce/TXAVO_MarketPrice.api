@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import {
   OBSERVATION_REPOSITORY,
+  ObservationRepository,
   PRICING_USE_CASE,
   PULSE_REPOSITORY,
   REFERENCE_PROVIDER,
@@ -61,8 +62,11 @@ import {
     { provide: PULSE_REPOSITORY, useExisting: MongoPulseRepository },
     {
       provide: PRICING_USE_CASE,
-      inject: [REFERENCE_PROVIDER],
-      useFactory: (references: ReferenceProvider) => new PricingUseCase(references)
+      inject: [REFERENCE_PROVIDER, OBSERVATION_REPOSITORY],
+      useFactory: (
+        references: ReferenceProvider,
+        observations: ObservationRepository
+      ) => new PricingUseCase(references, observations)
     }
   ]
 })
