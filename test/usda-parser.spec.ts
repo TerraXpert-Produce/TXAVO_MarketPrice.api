@@ -5,19 +5,25 @@ import {
 
 describe('USDA report parsers', () => {
   it('extracts Mexico Hass size prices', () => {
-    const report = `Los Angeles Terminal Market Fruit Prices\nJune 17, 2026
+    const report = `National FOB Review
+Agricultural Marketing Service
+June 24, 2026
+MEXICO CROSSINGS THROUGH TEXAS
 ---AVOCADOS:
-MEXICO HASS cartons 2 layer
-36s 58.00-62.00
-48s 59.00-61.00
-60s 53.00
-70s 45.00
-84s 35.00
----BANANAS:`;
+Hass
+cartons 2 layer
+32s 32.25-38.25 mostly 34.25-38.25 occasional higher
+36s 32.25-38.25 mostly 34.25-38.25 occasional higher
+40s 32.25-38.25 mostly 34.25-38.25 occasional higher
+48s 32.25-37.25 mostly 34.25-37.25 occasional higher
+60s 32.25-40.25 mostly 34.25-36.25 occasional higher
+70s 36.25-40.25 mostly 36.25-38.25
+84s 27.25-32.25 mostly 28.25-30.25 occasional higher and lower.
+ORGANIC`;
     expect(parsePriceReport(report)).toEqual({
-      usd: 60,
-      sizePrices: { 36: 60, 48: 60, 60: 53, 70: 45, 84: 35 },
-      asOf: 'June 17, 2026'
+      usd: 35.75,
+      sizePrices: { 32: 36.25, 36: 36.25, 40: 36.25, 48: 35.75, 60: 35.25, 70: 37.25, 84: 29.25 },
+      asOf: 'June 24, 2026'
     });
   });
 

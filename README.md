@@ -21,6 +21,13 @@ API base URL: `http://localhost:4173/api/v1`. Swagger is available at `/docs`.
 MongoDB credentials remain in the ignored `.env`. Set `API_WRITE_KEY` in production;
 when configured, write endpoints require the `x-api-key` header.
 
+USDA reference data is pulled automatically from USDA Agricultural Marketing Service
+price and movement reports at startup, then daily by default at 6:00 AM
+America/New_York. Override `USDA_DAILY_REFRESH_CRON` and `USDA_DAILY_REFRESH_TZ`
+when a deployment needs a different daily refresh window. `USDA_CACHE_TTL_MS`
+defaults to 24 hours so an uncached or stale `GET /api/v1/export-reference`
+request also refreshes the data.
+
 ## Endpoints
 
 - `GET /api/v1/health`

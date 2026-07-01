@@ -1,11 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Interval } from '@nestjs/schedule';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { PDFParse } from 'pdf-parse';
 import { ExportReference, ReferenceProvider } from '../../application/ports';
 
-export const USDA_PRICE_REPORT_URL = 'https://www.ams.usda.gov/mnreports/hc_fv010.pdf';
+export const USDA_PRICE_REPORT_URL = 'https://www.ams.usda.gov/mnreports/fvdfob.pdf';
 export const USDA_MOVEMENT_REPORT_URL = 'https://www.ams.usda.gov/mnreports/wa_fv175.pdf';
+export const USDA_DAILY_REFRESH_JOB = 'usda-daily-reference-refresh';
+export const DEFAULT_USDA_DAILY_REFRESH_CRON = '0 6 * * *';
+export const DEFAULT_USDA_DAILY_REFRESH_TZ = 'America/New_York';
 
 function averagePrice(match: RegExpMatchArray): number {
   const low = Number(match[1]);
@@ -14,15 +18,18 @@ function averagePrice(match: RegExpMatchArray): number {
 }
 
 export function parsePriceReport(text: string) {
-  const reportDate = text.match(
-    /Los Angeles Terminal Market Fruit Prices[\s\S]{0,80}\n([A-Z][a-z]+ \d{1,2}, \d{4})/
+  const reportDateRaw = text.match(
+    /National FOB Review[\s\S]{0,120}\n([A-Z][a-z]+ \d{1,2},?\s*\d{4})/
   )?.[1];
-  const avocadoSection = text.match(/---AVOCADOS:([\s\S]*?)---BANANAS:/)?.[1] ?? '';
-  const mexicoHass = avocadoSection.match(/MEXICO HASS([\s\S]*)/)?.[1] ?? '';
+  const reportDate = reportDateRaw?.replace(/,?\s*(\d{4})$/, ', $1');
+  const texasSection = text.match(
+    /MEXICO CROSSINGS THROUGH TEXAS[\s\S]*?---AVOCADOS:([\s\S]*?)(?:---PAPAYA:|ORGANIC)/
+  )?.[1] ?? '';
+  const mexicoHass = texasSection.match(/Hass[\s\S]*?cartons 2 layer([\s\S]*)/)?.[1] ?? '';
   const sizePrices: Record<number, number> = {};
   for (const size of [32, 36, 40, 48, 60, 70, 84]) {
     const match = mexicoHass.match(
-      new RegExp(`\\b${size}s\\s+(\\d+(?:\\.\\d+)?)(?:-(\\d+(?:\\.\\d+)?))?`)
+      new RegExp(`\\b${size}s[^\\n]*?mostly\\s+(\\d+(?:\\.\\d+)?)-(\\d+(?:\\.\\d+)?)`)
     );
     if (match) sizePrices[size] = averagePrice(match);
   }
@@ -53,12 +60,35 @@ export function parseMovementReport(text: string) {
 }
 
 @Injectable()
-export class UsdaReferenceProvider implements ReferenceProvider {
+export class UsdaReferenceProvider implements ReferenceProvider, OnModuleInit {
   private readonly logger = new Logger(UsdaReferenceProvider.name);
   private cached?: ExportReference;
   private refreshPromise?: Promise<ExportReference>;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly scheduler: SchedulerRegistry
+  ) {}
+
+  onModuleInit(): void {
+    const cronTime = this.config.get<string>('USDA_DAILY_REFRESH_CRON', DEFAULT_USDA_DAILY_REFRESH_CRON);
+    const timeZone = this.config.get<string>('USDA_DAILY_REFRESH_TZ', DEFAULT_USDA_DAILY_REFRESH_TZ);
+    const job = CronJob.from({
+      cronTime,
+      onTick: () => this.scheduledRefresh(),
+      start: true,
+      timeZone,
+      waitForCompletion: true,
+      name: USDA_DAILY_REFRESH_JOB
+    });
+
+    this.scheduler.addCronJob(USDA_DAILY_REFRESH_JOB, job);
+    this.logger.log(`Scheduled USDA reference refresh with "${cronTime}" in ${timeZone}`);
+    void this.scheduledRefresh().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Initial USDA reference refresh failed: ${message}`);
+    });
+  }
 
   async getReference(force = false): Promise<ExportReference> {
     const ttl = Number(this.config.get('USDA_CACHE_TTL_MS', 86_400_000));
@@ -70,9 +100,11 @@ export class UsdaReferenceProvider implements ReferenceProvider {
     return this.refreshPromise;
   }
 
-  @Interval(Number(process.env.USDA_AUTO_REFRESH_MS || 3_600_000))
   async scheduledRefresh(): Promise<void> {
-    await this.getReference(true);
+    const reference = await this.getReference(true);
+    this.logger.log(
+      `Updated USDA reference from AMS: price ${reference.price.asOf}, exports ${reference.exports.period}`
+    );
   }
 
   private async refresh(): Promise<ExportReference> {
@@ -99,7 +131,7 @@ export class UsdaReferenceProvider implements ReferenceProvider {
         usdPerKg: price.usd / cartonWeightKg,
         cartonWeightKg,
         package: '2-layer carton',
-        size: 'Mexico Hass, size 48',
+        size: 'Mexico Hass, size 48 · FOB McAllen',
         sizePrices: price.sizePrices,
         asOf: price.asOf
       },
@@ -140,13 +172,13 @@ export class UsdaReferenceProvider implements ReferenceProvider {
       error: null,
       price: {
         configured: true,
-        usd: 60,
-        usdPerKg: 60 / cartonWeightKg,
+        usd: 35.75,
+        usdPerKg: 35.75 / cartonWeightKg,
         cartonWeightKg,
         package: '2-layer carton',
-        size: 'Mexico Hass, size 48',
-        sizePrices: { 36: 60, 40: 60, 48: 60, 60: 53, 70: 45, 84: 35 },
-        asOf: 'June 17, 2026'
+        size: 'Mexico Hass, size 48 · FOB McAllen',
+        sizePrices: { 32: 36.25, 36: 36.25, 40: 36.25, 48: 35.75, 60: 35.25, 70: 37.25, 84: 29.25 },
+        asOf: 'June 24, 2026'
       },
       exports: {
         configured: true,
